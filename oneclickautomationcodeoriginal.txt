@@ -1,0 +1,307 @@
+import boto3
+import openpyxl
+import json
+import io
+
+s3_client = boto3.client('s3')
+codecommit_client = boto3.client('codecommit')
+codepipeline_client = boto3.client('codepipeline')
+
+def get_latest_commit_id(repository_name, branch_name):
+    response = codecommit_client.get_branch(repositoryName=repository_name, branchName=branch_name)
+    return response['branch']['commitId']
+
+def generate_yaml_from_json(json_data):
+    yaml_data = "Resources:\n"  # Start the YAML file with the Resources section
+
+    application_data = json_data.get('Application', {})
+    application_name = application_data.get('Name', '')
+
+    for key, value in json_data.items():
+        cleaned_value = {str(k).strip(): str(v).strip() for k, v in value.items() if k and v}
+
+        if key == 'ONECLICK_Ec2':
+            EC2ResourceName = f"{application_name}EC2Instance"  # Define the resource name variable using application_name
+            security_group_ids = cleaned_value.get('SecurityGroupIds', '').split(',')  # Assuming SecurityGroupIds is a comma-separated string in the Excel sheet
+            yaml_data += f"  MyEC2Instance:\n"
+            yaml_data += "    Type: AWS::EC2::Instance\n"
+            yaml_data += "    Properties:\n"
+            yaml_data += f"      ImageId: {cleaned_value.get('Imageid', '')}\n"
+            yaml_data += f"      InstanceType: {cleaned_value.get('InstanceType', '')}\n"
+            yaml_data += f"      KeyName: {cleaned_value.get('KeyName', '')}\n"
+            yaml_data += f"      AvailabilityZone: {cleaned_value.get('availability zone', '')}\n"
+            yaml_data += "      SecurityGroupIds:\n"
+            yaml_data += "        - !GetAtt SECURITYGROUP.GroupId\n"
+            yaml_data += f"      SubnetId: !Ref PrivateSubnet\n"
+            yaml_data += "      Tags:\n"
+            yaml_data += f"        - Key: Name\n"
+            yaml_data += f"          Value: {application_name}EC2\n"
+
+        elif key == 'ONECICK_RDS':
+            RDSResourceName = f"{application_name}RDSInstance"
+            yaml_data += f"  oneclickRDSInstance:\n"
+            yaml_data += "    Type: AWS::RDS::DBInstance\n"
+            yaml_data += "    Properties:\n"
+            yaml_data += f"      DBInstanceClass: {cleaned_value.get('DbInstance class', '')}\n"
+            yaml_data += f"      AllocatedStorage: {cleaned_value.get('DbAllocated Storage', '')}\n"
+            yaml_data += f"      DBInstanceIdentifier: {cleaned_value.get('DbInstanceID', '')}\n"
+            yaml_data += f"      Engine: mysql\n"
+            yaml_data += f"      MasterUsername: {cleaned_value.get('Dbuser', '')}\n"
+            yaml_data += f"      MasterUserPassword: {cleaned_value.get('DbPassword', '')}\n"
+            yaml_data += f"      AvailabilityZone: {cleaned_value.get('Availablity Zone', '')}\n"
+            yaml_data += "      VPCSecurityGroups:\n"
+            yaml_data += "        - !Ref SECURITYGROUP\n"
+            yaml_data += "      DBSubnetGroupName: !Ref mydbSubnetGroup\n"
+            yaml_data += "      Tags:\n"
+            yaml_data += f"        - Key: Name\n"
+            yaml_data += f"          Value: {application_name}RDS\n"
+
+            # Define the subnet group
+            yaml_data += "  mydbSubnetGroup:\n"
+            yaml_data += "    Type: AWS::RDS::DBSubnetGroup\n"
+            yaml_data += "    Properties:\n"
+            yaml_data += "      DBSubnetGroupDescription: Subnet group for RDS instance\n"
+            yaml_data += "      SubnetIds:\n"
+            yaml_data += "        - !Ref PrivateSubnet\n"
+            yaml_data += "        - !Ref PrivateSubnet2\n"
+
+        elif key == 'SECURITYGROUPS':
+            SecurityGroupName = f"{application_name}SecurityGroup"
+            yaml_data += f"  SECURITYGROUP:\n"
+            yaml_data += "    Type: AWS::EC2::SecurityGroup\n"
+            yaml_data += "    Properties:\n"
+            yaml_data += f"      GroupDescription: Security group for EC2 instances\n"
+            yaml_data += f"      VpcId: !Ref VPC\n"
+            yaml_data += "      SecurityGroupIngress:\n"
+            yaml_data += "        - IpProtocol: tcp\n"
+            yaml_data += "          FromPort: 80\n"
+            yaml_data += "          ToPort: 80\n"
+            yaml_data += "          CidrIp: 0.0.0.0/0\n"
+            yaml_data += "        - IpProtocol: tcp\n"
+            yaml_data += "          FromPort: 22\n"
+            yaml_data += "          ToPort: 22\n"
+            yaml_data += "          CidrIp: 0.0.0.0/0\n"
+        
+            SecurityGroupName = f"{application_name}SecurityGroup"
+            yaml_data += f"  SECURITYGROUP2:\n"
+            yaml_data += "    Type: AWS::EC2::SecurityGroup\n"
+            yaml_data += "    Properties:\n"
+            yaml_data += f"      GroupDescription: Security group for EC2 instances\n"
+            yaml_data += f"      VpcId: !Ref VPC\n"
+            yaml_data += "      SecurityGroupIngress:\n"
+            yaml_data += "        - IpProtocol: tcp\n"
+            yaml_data += "          FromPort: 80\n"
+            yaml_data += "          ToPort: 80\n"
+            yaml_data += "          CidrIp: 0.0.0.0/0\n"
+            yaml_data += "        - IpProtocol: tcp\n"
+            yaml_data += "          FromPort: 22\n"
+            yaml_data += "          ToPort: 22\n"
+            yaml_data += "          CidrIp: 0.0.0.0/0\n"
+
+        elif key == 'ONECLICK_ELB':
+            ELBResourceName = f"{application_name}ELB"
+            yaml_data += f"  oneclickELB:\n"
+            yaml_data += "    Type: AWS::ElasticLoadBalancingV2::LoadBalancer\n"
+            yaml_data += "    Properties:\n"
+            yaml_data += f"      IpAddressType: {cleaned_value.get('Ip Adress Type Lb', '')}\n"
+            yaml_data += f"      Subnets: [!Ref PrivateSubnet, !Ref PrivateSubnet2]\n"
+            yaml_data += f"      Type: {cleaned_value.get('ELB Type', '')}\n"
+            yaml_data += "      SecurityGroups:\n"
+            yaml_data += "        - !GetAtt SECURITYGROUP.GroupId\n"
+            yaml_data += "      Tags:\n"
+            yaml_data += f"        - Key: Name\n"
+            yaml_data += f"          Value: {application_name}ELB\n"
+            yaml_data += f"  Listener:\n"
+            yaml_data += "    Type: AWS::ElasticLoadBalancingV2::Listener\n"
+            yaml_data += "    Properties:\n"
+            yaml_data += f"      LoadBalancerArn: !Ref oneclickELB\n"       
+            yaml_data += "      Port: 80\n"
+            yaml_data += "      Protocol: HTTP\n" 
+            yaml_data += "      DefaultActions:\n"
+            yaml_data += "        - Type: forward\n"
+            yaml_data += "          TargetGroupArn: !Ref MyTargetGroup\n"
+            yaml_data += f"  MyTargetGroup:\n"
+            yaml_data += "    Type: AWS::ElasticLoadBalancingV2::TargetGroup\n"
+            yaml_data += "    Properties:\n"
+            yaml_data += "      Port: 80\n"
+            yaml_data += "      Protocol: HTTP\n" 
+            yaml_data += "      VpcId: !Ref VPC\n"
+            yaml_data += "      TargetType: instance\n"
+            yaml_data += "      Targets:\n"
+            yaml_data += "        - Id: !Ref MyEC2Instance\n"
+            yaml_data += "        - Id: !Ref MyEC2Instance2\n"
+
+    # Hardcoded VPC CIDR block
+    yaml_data += "  VPC:\n"
+    yaml_data += "    Type: AWS::EC2::VPC\n"
+    yaml_data += "    Properties:\n"
+    yaml_data += "      CidrBlock: 10.0.0.0/16\n"
+
+    # Hardcoded Internet Gateway
+    yaml_data += "  InternetGateway:\n"
+    yaml_data += "    Type: AWS::EC2::InternetGateway\n"
+
+    # Hardcoded Attach Gateway
+    yaml_data += "  AttachGateway:\n"
+    yaml_data += "    Type: AWS::EC2::VPCGatewayAttachment\n"
+    yaml_data += "    Properties:\n"
+    yaml_data += "      VpcId: !Ref VPC\n"
+    yaml_data += "      InternetGatewayId: !Ref InternetGateway\n"
+
+    # Hardcoded Elastic IP
+    yaml_data += "  EIP:\n"
+    yaml_data += "    Type: AWS::EC2::EIP\n"
+    yaml_data += "    Properties:\n"
+    yaml_data += "      InstanceId: !Ref MyEC2Instance\n"
+
+    # Hardcoded Private Subnet CIDR block
+    yaml_data += "  PrivateSubnet:\n"
+    yaml_data += "    Type: AWS::EC2::Subnet\n"
+    yaml_data += "    Properties:\n"
+    yaml_data += "      VpcId: !Ref VPC\n"
+    yaml_data += "      CidrBlock: 10.0.1.0/24\n"
+    yaml_data += "      AvailabilityZone: us-east-1b\n"
+    
+    # Another instance
+    EC2ResourceName = f"{application_name}EC2Instance"
+    yaml_data += "  MyEC2Instance2:\n"
+    yaml_data += "    Type: AWS::EC2::Instance\n"
+    yaml_data += "    Properties:\n"
+    yaml_data += "      ImageId: ami-080e1f13689e07408\n"
+    yaml_data += "      InstanceType: t2.micro\n"
+    yaml_data += "      KeyName: nvirginia\n"
+    yaml_data += "      AvailabilityZone: us-east-1a\n"
+    yaml_data += "      SecurityGroupIds:\n"
+    yaml_data += "        - !GetAtt SECURITYGROUP2.GroupId\n"
+    yaml_data += "      SubnetId: !Ref PrivateSubnet2\n"
+    yaml_data += "      Tags:\n"
+    yaml_data += f"        - Key: Name\n"
+    yaml_data += f"          Value: {application_name}EC2\n"
+    # Hardcoded Private Subnet CIDR block
+    yaml_data += "  PrivateSubnet2:\n"
+    yaml_data += "    Type: AWS::EC2::Subnet\n"
+    yaml_data += "    Properties:\n"
+    yaml_data += "      VpcId: !Ref VPC\n"
+    yaml_data += "      CidrBlock: 10.0.2.0/24\n"
+    yaml_data += "      AvailabilityZone: us-east-1a\n"
+
+    return yaml_data
+
+def lambda_handler(event, context):
+    bucket_name = 'oneclickbucketfresh'
+    excel_key = 'oneclick.xlsx'
+
+    try:
+        response = s3_client.get_object(Bucket=bucket_name, Key=excel_key)
+        excel_data = response['Body'].read()
+
+        workbook = openpyxl.load_workbook(filename=io.BytesIO(excel_data))
+        all_json_data = {}
+
+        for sheet_name in workbook.sheetnames:
+            sheet = workbook[sheet_name]
+            sheet_data = {}
+
+            for row in sheet.iter_rows(values_only=True):
+                if len(row) >= 2:
+                    key, value = row[:2]
+                    sheet_data[key] = value
+
+            all_json_data[sheet_name] = sheet_data
+
+        json_data = json.dumps(all_json_data)
+
+        json_file_key = 'oneclick.json'
+        s3_client.put_object(Bucket=bucket_name, Key=json_file_key, Body=json_data)
+
+        yaml_data = generate_yaml_from_json(all_json_data)
+
+        yaml_file_key = 'oneclick.yaml'
+        s3_client.put_object(Bucket=bucket_name, Key=yaml_file_key, Body=yaml_data)
+
+        commit_id = get_latest_commit_id('oneclickrepositary', 'main')
+
+        codecommit_client.put_file(
+            repositoryName='oneclickrepositary',
+            branchName='main',
+            fileContent=yaml_data,
+            filePath=yaml_file_key,
+            commitMessage='Committing YAML file containing AWS CloudFormation resources',
+            parentCommitId=commit_id
+        )
+
+        response = codepipeline_client.create_pipeline(
+            pipeline={
+                'name': 'oneclickrepositary-pipeline',
+                'roleArn': 'arn:aws:iam::838996484048:role/service-role/AWSCodePipelineServiceRole-us-east-1-demopipeline',
+                'artifactStore': {
+                    'type': 'S3',
+                    'location': bucket_name
+                },
+                'stages': [
+                    {
+                        'name': 'Source',
+                        'actions': [
+                            {
+                                'name': 'SourceAction',
+                                'actionTypeId': {
+                                    'category': 'Source',
+                                    'owner': 'AWS',
+                                    'provider': 'CodeCommit',
+                                    'version': '1'
+                                },
+                                'outputArtifacts': [
+                                    {
+                                        'name': 'SourceArtifact'
+                                    }
+                                ],
+                                'configuration': {
+                                    'RepositoryName': 'oneclickrepositary',
+                                    'BranchName': 'main'
+                                },
+                                'runOrder': 1
+                            }
+                        ]
+                    },
+                    {
+                        'name': 'Deploy',
+                        'actions': [
+                            {
+                                'name': 'DeployAction',
+                                'actionTypeId': {
+                                    'category': 'Deploy',
+                                    'owner': 'AWS',
+                                    'provider': 'CloudFormation',
+                                    'version': '1'
+                                },
+                                'inputArtifacts': [
+                                    {
+                                        'name': 'SourceArtifact'
+                                    }
+                                ],
+                                'configuration': {
+                                    'ActionMode': 'CREATE_UPDATE',
+                                    'StackName': 'oneclickstack',
+                                    'TemplatePath': 'SourceArtifact::oneclick.yaml',
+                                    'RoleArn': 'arn:aws:iam::838996484048:role/oneclickrole'
+                                },
+                                'runOrder': 1
+                            }
+                        ]
+                    }
+                ],
+                'version': 2
+            }
+        )
+
+        return {
+            'statusCode': 200,
+            'body': 'Success'
+        }
+
+    except Exception as e:
+        print(e)
+        return {
+            'statusCode': 500,
+            'body': str(e)
+        }
