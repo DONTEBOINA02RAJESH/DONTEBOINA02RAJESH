@@ -1,0 +1,26 @@
+    ONECLICK AUTOMATION PROJECT
+subject: oneclick automation is the live project that performs an automation of creating aws resources using a aws platform called lambda. The python code in the 
+lambda creates all the aws resouces automatically.when we upload the input file of excel sheet in the s3 bucket, the lambda function code reads the excel file and 
+triggers a merged json file and yaml file  based on the input excel file.This also triggers same json and yaml file to code commit as well.
+thereby, codepipeline is automatically created whenever yaml file triggers into codecommit and therby, a cloudformation stack gets created via stack all the
+aws resources are created
+
+
+construction:
+1. create a lamda function
+2. add 3 layers as required for the python code to perform
+     * lambdasinsights extension
+     * awssdkpandas
+     * PYYaml
+3. get a python code to perform the automation(note: paste the code the collected)
+4. create a s3 bucket
+5. create a code commit repositary
+6. make a excel sheet i.e.., input file for aws resources
+7. upload the excel sheet in the s3 bucket
+8.The lambda function code reads excel sheet from s3 and automatically triggers a json file and yaml file
+9.The triggered yaml file in s3 also triggers into codecommit automatically
+10.Based on the yaml file a codepipeline is automatically created 
+10. The deployment provider provided is cloudformation and the services are automatically triggered via cloud formation and the services are created which mentioned
+    in automated yaml file
+11. Hence, all the services are created by oneclick and the oneclick is uploading the excel file into s3.
+===================================================================================================================================
